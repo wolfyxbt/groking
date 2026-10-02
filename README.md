@@ -14,6 +14,7 @@ Claude Code 这类 agent 读不到 X 上的推文。它们的网页工具要么�
 
 - 一个支持 [Agent Skills](https://agentskills.io) 的 agent。本项目在 macOS 上的 Claude Code 中开发和测试，其他 agent 和平台理论上可用，但没有测试过。
 - Grok CLI 和一个 Grok 账号。不需要提前准备，skill 会引导你。
+- Grok CLI 里的 X 搜索能力取决于账号套餐。有用户反馈，没有 X Premium+ 会员的账号登录后查不到 X（未经官方确认）。装好后运行 `scripts/groking.sh --probe` 可以直接验证。
 - `bash`。建议装有 `jq` 或 `python3`，这样 skill 能发现被截断的回答。
 
 ## 安装
@@ -64,10 +65,20 @@ skill 同时要求你的 agent 把返回内容当作信息，而不是指令。�
 
 ## 排查问题
 
-自己运行检查命令：
+两条命令：
 
 ```bash
-~/.claude/skills/groking/scripts/groking.sh --check
+~/.claude/skills/groking/scripts/groking.sh --check   # 装了没、登录没（不消耗额度）
+~/.claude/skills/groking/scripts/groking.sh --probe   # X 搜索真的能用吗（消耗一次最小查询）
 ```
 
-各种状态和对应的处理方法见 [setup.md](skills/groking/references/setup.md)。
+每次查询脚本都会在 stderr 输出一行统计（X 搜索几次、多少 token、参考费用、耗时）；失败时多一行 `[groking] status=...`，末尾是日志文件路径。各种状态和对应的处理方法见 [setup.md](skills/groking/references/setup.md)。
+
+## 反馈问题
+
+到 [Issues](https://github.com/wolfyxbt/groking/issues) 提交，请附上：
+
+- `--check` 和 `--probe` 的输出
+- 失败那次的 `[groking]` 两行（统计行和状态行）
+- 状态行末尾指向的日志文件。注意日志里包含你的问题和 Grok 的回答，贴之前自己看一眼。
+- 操作系统和使用的 agent（Claude Code、Codex……）
