@@ -1,0 +1,73 @@
+# groking
+
+让你的编程 agent 读得到 X (Twitter)。
+
+Claude Code 这类 agent 读不到 X 上的推文。它们的网页工具要么被拦截，要么只拿到空页面，结果是 agent 告诉你"无法访问 X"，或者凭印象猜。Grok 原生支持搜索 X。这个 skill 让你的 agent 把 X 上的查询交给本机的 Grok CLI，拿到结果后继续工作。
+
+## 能做什么
+
+- **查询 X**：按链接读一条推文、看某个账号的近期动态、看某个话题的讨论、看一条推文下的回复。
+- **引导安装和登录**：没装 Grok CLI 或没登录时，agent 会发现并一步步带你完成，然后回到你原本的问题。
+- **结构上只读**：Grok 运行时本地工具全部被移除，它只能搜索，做不了别的。
+
+## 需要什么
+
+- 一个支持 [Agent Skills](https://agentskills.io) 的 agent。本项目在 macOS 上的 Claude Code 中开发和测试，其他 agent 和平台理论上可用，但没有测试过。
+- Grok CLI 和一个 Grok 账号。不需要提前准备，skill 会引导你。
+- `bash`。建议装有 `jq` 或 `python3`，这样 skill 能发现被截断的回答。
+
+## 安装
+
+用 [skills CLI](https://github.com/vercel-labs/skills) 安装，对所有项目生效：
+
+```bash
+npx skills add wolfyxbt/groking -g
+```
+
+或者手动安装到 Claude Code：
+
+```bash
+git clone https://github.com/wolfyxbt/groking.git
+cp -r groking/skills/groking ~/.claude/skills/
+```
+
+## 使用
+
+直接用自然语言问你的 agent：
+
+- "这条推文说了什么？https://x.com/..."
+- "@AnthropicAI 这周发了什么？"
+- "今天 X 上大家怎么讨论 Claude Code？"
+
+第一次使用时如果没有 Grok CLI，agent 会给你两条命令，由你自己运行：一条安装，一条登录。
+
+简单查询需要 15–60 秒。需要多轮搜索的开放问题可能要几分钟。
+
+## 它如何保证只读
+
+推文是不可信的文本，读了它的 agent 有可能被内容带偏。所以这个 skill 让 Grok 在没有任何行动能力的状态下运行：
+
+- 移除所有客户端工具：shell、文件读写、网页抓取、子 agent、MCP 工具。X 搜索和网页搜索运行在 xAI 的服务器上，不受影响。
+- 每次调用都显式指定权限模式，你的 Grok 配置里即使默认放行所有操作，也不会生效。
+- Grok 在一个空的临时目录里运行，开启只读沙箱，关闭跨会话记忆。
+- 你的 agent 只调用 skill 自带的脚本，不直接调用 `grok`。
+
+skill 同时要求你的 agent 把返回内容当作信息，而不是指令。技术手段保证不了推文内容本身是真的，所以回答里会保留推文链接，方便你核对。
+
+## 隐私和费用
+
+- 你的问题会通过你自己的 Grok 账号发送给 xAI。Grok 在空目录里运行，文件工具已被移除，接触不到你的项目文件。
+- 每次查询消耗你 Grok 套餐的额度；用 API key 登录的用户则按 token 计费。
+- Grok CLI 的安装和登录都由你自己完成，skill 接触不到你的凭据。
+
+本项目与 xAI 和 X 没有关联。
+
+## 排查问题
+
+自己运行检查命令：
+
+```bash
+~/.claude/skills/groking/scripts/groking.sh --check
+```
+
+各种状态和对应的处理方法见 [setup.md](skills/groking/references/setup.md)。
