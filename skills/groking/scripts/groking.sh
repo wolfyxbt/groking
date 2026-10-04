@@ -39,6 +39,11 @@ RULES='你是一个只读的 X (Twitter) 检索服务，用 X 搜索来回答问
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 
+# Grok 默认会扫描 Claude Code 和 Cursor 的 skills 与 MCP 配置，会把本 skill 自己也读进去，
+# 所以这次调用里关掉。
+export GROK_CLAUDE_SKILLS_ENABLED=false GROK_CURSOR_SKILLS_ENABLED=false
+export GROK_CLAUDE_MCPS_ENABLED=false GROK_CURSOR_MCPS_ENABLED=false
+
 answer="$(GROK_MEMORY=0 "$GROK" -p "$question" \
   --permission-mode dontAsk \
   --sandbox read-only \
