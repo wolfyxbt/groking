@@ -63,3 +63,7 @@ skill 同时要求 agent 把返回内容当作信息而不是指令，并保留�
 ## 反馈问题
 
 到 [Issues](https://github.com/wolfyxbt/groking/issues) 提交，附上失败时的 `[groking]` 提示行、操作系统和使用的 agent。
+
+## 许可证
+
+[MIT](LICENSE)
