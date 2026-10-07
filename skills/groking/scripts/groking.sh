@@ -4,6 +4,7 @@
 #   groking.sh "<问题>" ["<问题>" ...]
 #
 # 传入多个问题时并发查询，按问题分段输出。单个问题最多等 8 分钟（GROKING_TIMEOUT 可改，单位秒）。
+# 需要联网，并且 Grok 要能写自己的目录（~/.grok）；在 agent 的沙箱里跑不了时会直接说明。
 # 成功：回答输出到 stdout，退出码 0。
 # 失败：stderr 一行 [groking] 提示，退出码：
 #   1  查询失败    3  未安装 Grok CLI    4  未登录
@@ -18,6 +19,9 @@ TIMEOUT="${GROKING_TIMEOUT:-480}"
 for q in "$@"; do
   [ -n "${q// /}" ] || fail 1 '用法: groking.sh "<问题>" ["<问题>" ...]'
 done
+
+# 在禁止联网的沙箱里（Codex 会设这个变量）Grok 只会反复重试，直接说清楚。
+[ "${CODEX_SANDBOX_NETWORK_DISABLED:-}" = 1 ] && fail 1 "当前沙箱禁止联网，Grok 无法工作。请在沙箱外运行这条命令。"
 
 GROK="$(command -v grok 2>/dev/null || true)"
 [ -n "$GROK" ] || GROK="${GROK_HOME:-$HOME/.grok}/bin/grok" # 刚装完、PATH 还没刷新时
@@ -42,7 +46,8 @@ RULES='你是一个只读的 X (Twitter) 检索服务，用 X 搜索来回答问
 如果你没有可用的 X 搜索工具，不要用别的方式回答，只回复 NO_X_SEARCH 这一个词。'
 
 # Grok 在空目录里运行，项目文件不在它可及的范围内。
-workdir="$(mktemp -d)"
+workdir="$(mktemp -d 2>/dev/null)" || workdir=""
+[ -n "$workdir" ] || fail 1 "无法创建临时目录：当前环境禁止写入（例如 agent 的只读沙箱）。请在沙箱外运行这条命令。"
 trap 'rm -rf "$workdir"' EXIT
 mkdir "$workdir/empty"
 
@@ -56,7 +61,6 @@ ask() { # ask <序号> <问题>：回答写入 N.out，退出码和失败提示�
   local n="$1" pid waited=0 timed_out=0 rc err code=0 msg=""
   "$GROK" -p "$2" \
     --permission-mode dontAsk \
-    --sandbox read-only \
     --disallowed-tools "$DENY_TOOLS" \
     --deny MCPTool --deny Bash --deny Edit --deny Write \
     --no-subagents \
@@ -74,12 +78,14 @@ ask() { # ask <序号> <问题>：回答写入 N.out，退出码和失败提示�
     fi
     sleep 1; waited=$((waited + 1))
   done
-  wait "$pid" 2>/dev/null; rc=$?
+  rc=1; [ "$timed_out" = 1 ] || { wait "$pid"; rc=$?; }
   err="$(cat "$workdir/$n.err")"
   if [ "$timed_out" = 1 ]; then
     code=1 msg="Grok 超过 $TIMEOUT 秒没有返回，可能是网络不通或 xAI 服务异常。稍后重试一次。"
   elif [ "$rc" -ne 0 ]; then
-    if grep -qiE 'not signed in|not authenticated|unauthorized|401' <<<"$err"; then
+    if grep -qiE 'permission denied' <<<"$err"; then
+      code=1 msg="Grok 无法写入自己的目录（~/.grok），当前沙箱禁止。请在沙箱外运行这条命令。"
+    elif grep -qiE 'not signed in|not authenticated|unauthorized|401' <<<"$err"; then
       code=4 msg="Grok CLI 未登录或登录已过期。按 references/setup.md 引导用户登录。"
     elif grep -qiE 'unexpected argument|unrecognized (option|argument)' <<<"$err"; then
       code=5 msg="Grok CLI 版本过旧，请用户运行：grok update"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "groking"
+  short_description: "通过本机 Grok CLI 只读检索 X (Twitter)"
+  default_prompt: "用 $groking 查 X 上的内容，并原样转述脚本返回的结果。"
