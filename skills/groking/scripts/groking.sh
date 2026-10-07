@@ -3,7 +3,7 @@
 #
 #   groking.sh "<问题>" ["<问题>" ...]
 #
-# 传入多个问题时并发查询，按问题分段输出。
+# 传入多个问题时并发查询，按问题分段输出。单个问题最多等 8 分钟（GROKING_TIMEOUT 可改，单位秒）。
 # 成功：回答输出到 stdout，退出码 0。
 # 失败：stderr 一行 [groking] 提示，退出码：
 #   1  查询失败    3  未安装 Grok CLI    4  未登录
@@ -11,6 +11,8 @@
 set -uo pipefail
 
 fail() { echo "[groking] $2" >&2; exit "$1"; }
+
+TIMEOUT="${GROKING_TIMEOUT:-480}"
 
 [ $# -ge 1 ] || fail 1 '用法: groking.sh "<问题>" ["<问题>" ...]'
 for q in "$@"; do
@@ -53,7 +55,7 @@ export GROK_CLAUDE_SKILLS_ENABLED=false GROK_CURSOR_SKILLS_ENABLED=false
 export GROK_CLAUDE_MCPS_ENABLED=false GROK_CURSOR_MCPS_ENABLED=false
 
 ask() { # ask <序号> <问题>：回答写入 N.out，退出码和失败提示写入 N.rc / N.msg
-  local n="$1" rc err code=0 msg=""
+  local n="$1" pid waited=0 timed_out=0 rc err code=0 msg=""
   "$GROK" -p "$2" \
     --permission-mode dontAsk \
     --sandbox read-only \
@@ -62,10 +64,23 @@ ask() { # ask <序号> <问题>：回答写入 N.out，退出码和失败提示�
     --no-subagents \
     --rules "$RULES" \
     --cwd "$workdir/empty" \
-    --output-format plain >"$workdir/$n.out" 2>"$workdir/$n.err" </dev/null
-  rc=$?
+    --output-format plain >"$workdir/$n.out" 2>"$workdir/$n.err" </dev/null &
+  pid=$!
+  # 网络不通时 Grok 会反复重试、几分钟不出声，所以自己计时，赶在 agent 的超时之前结束。
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$waited" -ge "$TIMEOUT" ]; then
+      disown "$pid" 2>/dev/null # 不让 bash 打印 "Terminated" 之类的作业消息
+      pkill -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null; sleep 2; kill -9 "$pid" 2>/dev/null
+      timed_out=1
+      break
+    fi
+    sleep 1; waited=$((waited + 1))
+  done
+  wait "$pid" 2>/dev/null; rc=$?
   err="$(cat "$workdir/$n.err")"
-  if [ "$rc" -ne 0 ]; then
+  if [ "$timed_out" = 1 ]; then
+    code=1 msg="Grok 超过 $TIMEOUT 秒没有返回，可能是网络不通或 xAI 服务异常。稍后重试一次。"
+  elif [ "$rc" -ne 0 ]; then
     if grep -qiE 'not signed in|not authenticated|unauthorized|401' <<<"$err"; then
       code=4 msg="Grok CLI 未登录或登录已过期。按 references/setup.md 引导用户登录。"
     elif grep -qiE 'unexpected argument|unrecognized (option|argument)' <<<"$err"; then
